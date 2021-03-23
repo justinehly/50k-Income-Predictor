@@ -31,9 +31,6 @@ Prediction task is to determine whether a person makes over 50K a year.
 ### Attribute Information:
 
 #### *_Listing of attributes:_*
-
-* class: >50K, <=50K. *(this is the response variable and it is at the end of the columns)*
-
 * age: continuous.
 * workclass: Private, Self-emp-not-inc, Self-emp-inc, Federal-gov, Local-gov, State-gov, Without-pay, Never-worked.
 * fnlwgt: continuous.
@@ -49,3 +46,4 @@ Prediction task is to determine whether a person makes over 50K a year.
 * capital-loss: continuous.
 * hours-per-week: continuous.
 * native-country: United-States, Cambodia, England, Puerto-Rico, Canada, Germany, Outlying-US(Guam-USVI-etc), India, Japan, Greece, South, China, Cuba, Iran, Honduras, Philippines, Italy, Poland, Jamaica, Vietnam, Mexico, Portugal, Ireland, France, Dominican-Republic, Laos, Ecuador, Taiwan, Haiti, Columbia, Hungary, Guatemala, Nicaragua, Scotland, Thailand, Yugoslavia, El-Salvador, Trinadad&Tobago, Peru, Hong, Holand-Netherlands.
+* class: >50K, <=50K. *(this is the response variable)*
