@@ -32,7 +32,7 @@ Prediction task is to determine whether a person makes over 50K a year.
 
 #### *_Listing of attributes:_*
 
-* Response: >50K, <=50K.
+* class: >50K, <=50K. *(this is the response variable and it is at the end of the columns)*
 
 * age: continuous.
 * workclass: Private, Self-emp-not-inc, Self-emp-inc, Federal-gov, Local-gov, State-gov, Without-pay, Never-worked.
