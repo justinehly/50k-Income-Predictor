@@ -1,0 +1,107 @@
+---
+title: "Project2"
+author: "Allen Miller"
+date: "3/24/2021"
+output: html_document
+---
+
+```{r}
+#Import Libraries
+library(tidyverse)
+library(stringr)
+library(dplyr)
+
+```
+
+
+```{r}
+#Data import
+adult_info <- read.csv("/Users/allenmiller/Documents/GitHub/6372---50k-Income-Predictor/Data/adult.data.csv", header = TRUE)
+str(adult_info)
+View(adult_info)
+
+#Dummy set for easy rollback of data
+dummy <- adult_info
+
+
+
+#Looking for Null Values
+#No Nulls found in the dataset
+sapply(dummy, function(x) sum(is.na(x)))
+
+
+#Looking at data types
+str(dummy)
+
+
+
+#Replace the "?" in Workclass with "none" and change to factor
+dummy$workclass <- dummy$workclass %>% str_replace("\\?", "None")
+dummy$workclass <- as.factor(dummy$workclass)
+str(dummy$workclass)
+unique(dummy$workclass)
+
+
+
+#Save point
+adult_info <- dummy
+
+#Change Education to a factor
+dummy$education <- as.factor(dummy$education)
+str(dummy$education)
+unique(dummy$education)
+
+
+#Change Marital.Status to a factor
+#We may want to look into what some of these mean and potentially combine levels
+dummy$marital.status <- as.factor(dummy$marital.status)
+str(dummy$marital.status)
+unique(dummy$marital.status)
+
+
+#change Occupation to factor
+#Once again lets look at narrowing down some levels
+dummy$occupation <- dummy$occupation %>% str_replace("\\?", "Unknown")
+dummy$occupation <- as.factor(dummy$occupation)
+str(dummy$occupation)
+unique(dummy$occupation)
+
+
+#save point
+adult_info <- dummy
+
+
+#change relationship to factor
+#What even is this variable? 
+dummy$relationship <- as.factor(dummy$relationship)
+str(dummy$relationship)
+unique(dummy$relationship)
+
+
+#change race to factor
+dummy$race <- as.factor(dummy$race)
+str(dummy$race)
+unique(dummy$race)
+
+
+#change sex to factor
+dummy$sex <- as.factor(dummy$sex)
+str(dummy$sex)
+unique(dummy$sex)
+
+
+#change native.country to factor
+#This is a lot of levels. Are they all useful to us in this format?
+dummy$native.country <- dummy$native.country %>% str_replace("\\?", "Other")
+dummy$native.country <- as.factor(dummy$native.country)
+str(dummy$native.country)
+unique(dummy$native.country)
+
+
+#change class to factor
+dummy$class <- as.factor(dummy$class)
+str(dummy$class)
+unique(dummy$class)
+
+
+```
