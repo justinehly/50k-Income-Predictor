@@ -1,0 +1,345 @@
+---
+title: "Project2"
+author: "Allen Miller"
+date: "3/24/2021"
+output: html_document
+---
+
+```{r libraries}
+# Import Libraries
+library(tidyverse)
+library(stringr)
+library(magrittr)
+library(naniar)
+library(GGally)
+library(ggplot2)
+library(caret)
+library(ROSE)
+library(dplyr)
+
+```
+
+
+```{r data import}
+setwd("C:/Users/justi.DATA-POWER/OneDrive - Southern Methodist University/Documents/Github/6372---50k-Income-Predictor/Data")
+adult_info <- read.csv("adult.data.csv", header = TRUE)
+# View(adult_info)
+adult_test <- read.csv("adult.test.csv")
+# set the train set to the larger data set
+train <- adult_info
+test <- adult_test
+
+```
+
+```{r training clean data}
+
+#Looking for Null Values - based on data description, NA = "?" or " ?"
+sapply(train, function(x) sum(sum(is.na(x)),
+                              sum(x %in% "?"),
+                              sum(x %in% " ?"))) 
+# quite a few NA's
+# workclass = 1836
+# occupation = 1843
+# native.country = 583
+
+str(train)
+# looking at just the missing values
+missing <- train %>% filter(occupation %in% " ?" |
+                              workclass %in% " ?" |
+                              native.country %in% " ?")
+# View(missing)
+# appears all the missing values for workclass are also missing for workclass - 
+# let's set to "unknown and see if we can still predict
+
+# replace " ?" with "Unknown"
+train$workclass <- replace(train$workclass, train$workclass %in% " ?", "Unknown")
+train$occupation <- replace(train$occupation, train$occupation %in% " ?", "Unknown")
+train$native.country <- replace(train$native.country, train$native.country %in% " ?", "Unknown")
+
+#convert all chr to factors
+train[sapply(train, is.character)] <- lapply(train[sapply(train, is.character)], as.factor)
+
+
+levels(train$workclass)
+levels(train$occupation)
+levels(train$native.country)
+train <- train[,c(15,1:14)]
+
+str(train)
+
+summary(train)
+# data set will need to be balanced before any tests run
+# 24,720 <=50k vs 7,841 >50k
+
+# lots of zeros in the capital gains and losses columns, may be better to treat those as yes/no
+zeros <- sapply(train, function(x) sum(x == 0))
+gainZeroPerc <- zeros[11]/dim(train)[1]
+gainZeroPerc # ~92% are 0's
+lossZeroPerc <- zeros[12]/dim(train)[1]
+lossZeroPerc # ~95% are 0's
+
+train <- train %>% mutate(capgain = case_when(capital.gain > 0 ~ "yes",
+                                              TRUE ~ "no"),
+                          caploss = case_when(capital.loss >0 ~ "yes",
+                                              TRUE ~ "no"))
+# convert new columns to factor
+train[sapply(train, is.character)] <- lapply(train[sapply(train, is.character)], as.factor)
+str(train)
+
+# remove original capitcal gain/ loss cols
+train <- train[,-c(12,13)]
+names(train)[1] <- "Income"
+
+```
+
+
+```{r test clean data}
+
+#Looking for Null Values - based on data description, NA = "?" or " ?"
+sapply(test, function(x) sum(sum(is.na(x)),
+                              sum(x %in% "?"),
+                              sum(x %in% " ?"))) 
+# quite a few NA's
+# workclass = 963
+# occupation = 966
+# native.country = 274
+
+str(test)
+# looking at just the missing values
+missing <- test %>% filter(occupation %in% " ?" |
+                              workclass %in% " ?" |
+                              native.country %in% " ?")
+# View(missing)
+# appears all the missing values for workclass are also missing for workclass - 
+# let's set to "unknown and see if we can still predict
+
+# replace " ?" with "Unknown"
+test$workclass <- replace(test$workclass, test$workclass %in% " ?", "Unknown")
+test$occupation <- replace(test$occupation, test$occupation %in% " ?", "Unknown")
+test$native.country <- replace(test$native.country, test$native.country %in% " ?", "Unknown")
+
+#convert all chr to factors
+test[sapply(test, is.character)] <- lapply(test[sapply(test, is.character)], as.factor)
+
+
+levels(test$workclass)
+levels(test$occupation)
+levels(test$native.country)
+test <- test[,c(15,1:14)]
+
+str(test)
+
+summary(test)
+# data set will need to be balanced before any tests run
+# 24,7212,435 <=50k vs 3,846 >50k
+# lots of zeros in the capital gains and losses columns, may be better to treat those as yes/no
+zeros <- sapply(test, function(x) sum(x == 0))
+gainZeroPerc <- zeros[12]/dim(test)[1]
+gainZeroPerc # ~92% are 0's
+lossZeroPerc <- zeros[13]/dim(test)[1]
+lossZeroPerc # ~95% are 0's
+
+test <- test %>% mutate(capgain = case_when(capital.gain > 0 ~ "yes",
+                                              TRUE ~ "no"),
+                          caploss = case_when(capital.loss >0 ~ "yes",
+                                              TRUE ~ "no"))
+# convert new columns to factor
+train[sapply(train, is.character)] <- lapply(train[sapply(train, is.character)], as.factor)
+str(train)
+
+# remove original capitcal gain/ loss cols
+test <- test[,-c(12,13)]
+names(test)[1] <- "Income"
+
+```
+
+```{r EDA}
+
+
+# check out the int variables
+train %>% select_if(is.integer) %>% 
+  ggpairs(ggplot2::aes(color=train$Income))
+# not very good stories here, dont see any dependencies between the numberical values
+
+t(aggregate(age~Income,data=train,summary))
+ggplot(train, aes(age, fill= Income)) + geom_bar(position="fill") +
+  scale_x_continuous(breaks=seq(0,90, by = 10)) +
+  labs(title="Age by Income") +
+  theme_classic()
+# quite a big of overlap between <=50 and >50 - may not be a good selector
+
+ggplot(train, aes(age, fill= Income)) + geom_boxplot() +
+  scale_x_continuous(breaks=seq(0,90, by = 10)) + coord_flip() +
+  labs(title="Age by Income") +
+  theme_classic()
+# quite a big of overlap between <=50 and >50 - may not be a good selector
+
+t(aggregate(fnlwgt~Income,data=train,summary))
+ggplot(train, aes(fnlwgt, fill= Income)) + geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
+  labs(title="FinalWeight by Income",
+       x ="Final Weight") + theme_classic() +
+  coord_flip()
+# this is a weighting metric, so not surprised that they boxplots are about the same
+
+t(aggregate(workclass~Income,data=train,summary))
+ggplot(train, aes(workclass, fill= Income)) + geom_bar(position="fill") +
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
+  labs(title = "WorkClass by Income") + theme_classic()
+# this variable may be useful as well - self employed are favored to make >50k
+
+t(aggregate(occupation~Income,data=train,summary))
+ggplot(train, aes(occupation, fill= Income)) + geom_bar(position="fill") +
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
+  labs(title="Occupation by Income") +
+  theme_classic()
+# Exec-managerial, Prof-sepcialty look good for making >50
+
+t(aggregate(education~Income,data=train,summary))
+ggplot(train, aes(education, fill= Income)) + geom_bar(position="fill") +
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
+  labs(title="Education by Income") + theme_classic()
+# this one favors more educated people to make >50k
+
+t(aggregate(education.num~Income,data=train,summary))
+# this may work better with education.num as a factor, but more education = more $$$
+ggplot(train, aes(education.num, fill= Income)) + geom_bar(position="fill") +
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
+  labs(title="Education Years by Income") + theme_classic()
+
+t(aggregate(marital.status~Income,data=train,summary))
+ggplot(train, aes(x=marital.status, fill= Income)) + 
+  geom_bar(position="fill") +
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
+  labs(title="Marital Status by Income") + theme_classic()
+# Married-AF-spouse and Married-civ-spouse have highest potential to make >50k
+
+t(aggregate(relationship~Income,data=train,summary))
+ggplot(train, aes(relationship, fill= Income)) + geom_bar(position="fill") +
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
+  labs(title="Relationship by Income") + theme_classic()
+# husband and wife have highest potential to >50
+
+t(aggregate(marital.status~relationship,data=train,summary))
+ggplot(train, aes(x=relationship, fill= marital.status)) + 
+  geom_bar(stat="count") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
+  labs(title="Relationship by Marital Status")
+
+
+t(aggregate(race~Income,data=train,summary))
+ggplot(train, aes(race, fill= Income)) + geom_bar(position="fill") +
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
+  labs(title="Race by Income") + theme_classic()
+# none of these seems to point to making over 50
+
+t(aggregate(native.country~Income,data=train,summary))
+ggplot(train, aes(native.country, fill= Income)) + geom_bar(position="fill") +
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
+  labs(title="Native Country by Income") + theme_classic()
+# quite a few of these pop, may be very useful
+
+t(aggregate(capgain~Income,data=train,summary))
+ggplot(train, aes(capgain, fill= Income)) + geom_bar(position="fill") +
+  labs(title="Has Capital Grains by Income") + theme_classic()
+  #theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0))
+# people with capital gains tend to make more than 50
+
+t(aggregate(caploss~Income,data=train,summary))
+ggplot(train, aes(caploss, fill= Income)) + geom_bar(position="fill") +
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
+  labs(title="Has Campital Loss by Income") + theme_classic()
+# people with capital.loss also have tend to make >50
+
+t(aggregate(hours.per.week~Income,data=train,summary))
+ggplot(train, aes(hours.per.week, fill= Income)) + geom_bar(position="fill") +
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
+  scale_x_continuous(breaks=seq(0,100, by = 10)) +
+  labs(title="Hours Per Week by Income",
+       x = "Hours Worked Per Week") + theme_classic()
+# this maybe a decent predictor since we can see some separation between hours and over/under 50k
+
+
+```
+
+```{r balance training dataset}
+# instruction from: https://www.analyticsvidhya.com/blog/2016/03/practical-guide-deal-imbalanced-classification-problems/
+# using ROSE library
+
+# recheck table
+table(train$Income)
+
+# Income distribution
+prop.table(table(train$Income))
+
+library(rpart)
+# use decision tree to check for prediction accuracy on raw data
+treeimb <- lm(Income~., data=train)
+pred.treeimb <- predict(treeimb, newdata = test)
+
+accuracy.meas(test$Income, pred.treeimb[,2])
+# threshold = 0.5
+# not very good numbers 
+# precision = 0.679 {precision of prediction}
+# recall = 0.546 {recall of the prediction}
+# F = 0.303 {average between precision and recall}
+
+roc.curve(test$Income, pred.treeimb[,2], plotit = T)
+# AUC = 0.826 which isn't all the bad
+
+# over sampling
+data_balanced_over <- ovun.sample(Income~., data=train, method = "over", N = 24720 * 2, seed = 123)$data
+table(data_balanced_over$Income)
+# data is now balance between <=50k and >50k
+
+data_balanced_under <- ovun.sample(Income~., data=train, method = "under", N = 7841 * 2, seed = 123)$data
+table(data_balanced_under$Income)
+
+data_balanced_both <- ovun.sample(Income~., data=train, method = "both", p=0.5, seed = 123)$data
+table(data_balanced_both$Income)
+
+data.rose <- ROSE(Income~., data=train, seed = 123)$data
+table(data.rose$Income)
+
+# build decision trees to evaluate accuracy
+tree.rose <- rpart(Income~., data = data.rose)
+tree.over <- rpart(Income~., data = data_balanced_over)
+tree.under <- rpart(Income~., data = data_balanced_under)
+tree.both <- rpart(Income~., data = data_balanced_both)
+
+# make predictions
+pred.tree.rose <- predict(tree.rose, newdata = test)
+pred.tree.over <- predict(tree.over, newdata = test)
+pred.tree.under <- predict(tree.under, newdata = test)
+pred.tree.both <- predict(tree.both, newdata = test)
+
+#AUC Rose
+roc.curve(test$Income, pred.tree.rose[,2], add.roc = F, col = "red")
+
+#AUC Over
+roc.curve(test$Income, pred.tree.over[,2], add.roc = T, col = "blue")
+
+#AUC Under
+roc.curve(test$Income, pred.tree.under[,2], add.roc = T, col = "green")
+
+#AUC Both
+roc.curve(test$Income, pred.tree.both[,2], add.roc = T, col = "black")
+
+pta <- accuracy.meas(test$Income, pred.tree.rose[,2])
+pto <- accuracy.meas(test$Income, pred.tree.over[,2])
+ptu <- accuracy.meas(test$Income, pred.tree.under[,2])
+ptb <- accuracy.meas(test$Income, pred.tree.both[,2])
+
+tree <- c("Rose", "Over", "Under", "Both")
+precision <- as.numeric(unlist(c(pta[3], pto[3], ptu[3], ptb[3])))
+recall <- as.numeric(unlist(c(pta[4], pto[4], ptu[4], ptb[4])))
+F <- as.numeric(unlist(F <- c(pta[5], pto[5], ptu[5], ptb[5])))
+
+# put all the accuract measures into 1 dataframe
+accuracyDF <- data.frame(tree, precision, recall, F)
+accuracyDF
+# over or under perform the same, I prefer the larger dataset = over
+
+
+```
