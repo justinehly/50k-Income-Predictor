@@ -8,6 +8,7 @@ output: html_document
 ```{r}
 #Import Libraries
 library(tidyverse)
+library(GGally)
 library(stringr)
 library(dplyr)
 
@@ -16,7 +17,13 @@ library(dplyr)
 
 ```{r}
 #Data import
-adult_info <- read.csv("/Users/allenmiller/Documents/GitHub/6372---50k-Income-Predictor/Data/adult.data.csv", header = TRUE)
+
+#OSX Path
+#adult_info <- read.csv("/Users/allenmiller/Documents/GitHub/6372---50k-Income-Predictor/Data/adult.data.csv", header = TRUE)
+
+#Window Path
+adult_info <- read.csv("C:/Users/allen/source/repos/6372---50k-Income-Predictor/Data/adult.data.csv", header = TRUE)
+
 str(adult_info)
 View(adult_info)
 
@@ -34,11 +41,8 @@ sapply(dummy, function(x) sum(is.na(x)))
 str(dummy)
 
 
-
 #Replace the "?" in Workclass with "none" and change to factor
 dummy$workclass <- dummy$workclass %>% str_replace("\\?", "None")
-dummy$workclass <- as.factor(dummy$workclass)
-str(dummy$workclass)
 unique(dummy$workclass)
 
 
@@ -46,62 +50,90 @@ unique(dummy$workclass)
 #Save point
 adult_info <- dummy
 
-#Change Education to a factor
-dummy$education <- as.factor(dummy$education)
-str(dummy$education)
-unique(dummy$education)
-
-
-#Change Marital.Status to a factor
-#We may want to look into what some of these mean and potentially combine levels
-dummy$marital.status <- as.factor(dummy$marital.status)
-str(dummy$marital.status)
-unique(dummy$marital.status)
-
 
 #change Occupation to factor
 #Once again lets look at narrowing down some levels
 dummy$occupation <- dummy$occupation %>% str_replace("\\?", "Unknown")
-dummy$occupation <- as.factor(dummy$occupation)
-str(dummy$occupation)
 unique(dummy$occupation)
-
-
-#save point
-adult_info <- dummy
-
-
-#change relationship to factor
-#What even is this variable? 
-dummy$relationship <- as.factor(dummy$relationship)
-str(dummy$relationship)
-unique(dummy$relationship)
-
-
-#change race to factor
-dummy$race <- as.factor(dummy$race)
-str(dummy$race)
-unique(dummy$race)
-
-
-#change sex to factor
-dummy$sex <- as.factor(dummy$sex)
-str(dummy$sex)
-unique(dummy$sex)
 
 
 #change native.country to factor
 #This is a lot of levels. Are they all useful to us in this format?
 dummy$native.country <- dummy$native.country %>% str_replace("\\?", "Other")
-dummy$native.country <- as.factor(dummy$native.country)
-str(dummy$native.country)
 unique(dummy$native.country)
 
 
-#change class to factor
-dummy$class <- as.factor(dummy$class)
-str(dummy$class)
-unique(dummy$class)
+#Change all Char variables to Factors
+dummy[sapply(dummy, is.character)] <- lapply(adult_info[sapply(dummy, is.character)], as.factor)
+
+str(dummy)
+
+adult_info <- dummy
+
+
+
+```
+
+
+```{r}
+#Import Test Set
+adult_test <- read.csv("C:/Users/allen/source/repos/6372---50k-Income-Predictor/Data/adult.test.csv", header = TRUE)
+
+str(adult_test)
+
+#Set working variable
+holder <- adult_test
+
+
+#Replace the "?" in Workclass with "none" and change to factor
+holder$workclass <- holder$workclass %>% str_replace("\\?", "None")
+unique(holder$workclass)
+
+
+
+#change Occupation to factor
+#Once again lets look at narrowing down some levels
+holder$occupation <- holder$occupation %>% str_replace("\\?", "Unknown")
+unique(holder$occupation)
+
+
+#change native.country to factor
+#This is a lot of levels. Are they all useful to us in this format?
+holder$native.country <- holder$native.country %>% str_replace("\\?", "Other")
+unique(holder$native.country)
+
+
+holder[sapply(holder, is.character)] <- lapply(holder[sapply(holder, is.character)], as.factor)
+
+str(holder)
+
+```
+
+```{r}
+#checking to see any correlation on int values
+adult_info %>% select_if(is.integer) %>% 
+  ggpairs(ggplot2::aes(color=adult_info$Income))
+
+#Looking at the impact that education has on income
+adult_info %>% ggplot(aes(x = education, fill = class)) +
+  geom_bar(position = 'dodge') + 
+  theme_classic() + 
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0))
+#Looks like Graduating HS has a major impact on making 50k
+#Interesting side not that Doctorate, Masters, and Prof-School all have more adults making 50k than less than 50k
+
+
+#Looking at the impact that occupation has on making 50k
+adult_info %>% ggplot(aes(x = occupation, fill = class)) +
+  geom_bar(position = 'dodge') +
+    theme_classic() + 
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0))
+
+
+adult_info %>% ggplot(aes(x = occupation, y = hours.per.week, fill = class)) +
+  geom_bar(stat = 'identity', position = 'dodge') +
+    theme_classic() + 
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0))
 
 
 ```
