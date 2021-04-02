@@ -10,13 +10,13 @@ output: html_document
 library(tidyverse)
 library(stringr)
 library(magrittr)
+library(car)
 library(stats)
 library(naniar)
 library(GGally)
 library(ggplot2)
 library(directlabels)
 library(caret)
-library(ROSE)
 library(dplyr)
 
 ```
@@ -36,7 +36,7 @@ summary(tot_adult_info)
 
 ```
 
-```{r clean data}
+```{r initial data clean inc capital.gain/loss}
 clean <- tot_adult_info
 
 #Looking for Null Values - based on data description, NA = "?" or " ?"
@@ -78,6 +78,10 @@ summary(clean)
 # data set will need to be balanced before any tests run
 # 24,720 <=50k vs 7,841 >50k
 
+#output sumamry to csv for easier use in the paper
+write.csv(summary(clean),"data_summary.csv")
+
+
 # lots of zeros in the capital gains and losses columns, may be better to treat those as yes/no
 zeros <- sapply(clean, function(x) sum(x == 0))
 gainZeroPerc <- zeros[11]/dim(clean)[1]
@@ -117,14 +121,141 @@ clean$Income <- as.factor(case_when(
 
 
 
+```{r clean workclass}
+# ---- clean workclass --- #
+
+workclassTable <- table(clean$workclass)
+t(t(workclassTable))
+propt <- t(t(prop.table(workclassTable)))
+colnames(propt) <- "workclass proportions"
+propt
+p <- prop.table(table(clean$workclass, clean$Income))
+p
+t(aggregate(workclass~Income,data=clean,summary))
+summary(clean$workclass)
+
+# Private have the bulk of the entries ~ 70%
+# unpaid people make up less than .001% 
+sum(p[c(1,2,7)])*100 # = 13% # gov workers
+# all government workers make up a combined 13% maybe we should combine those???
+# self employed combined make up 10% 3% inc, 7% not-inc
+# this variable may be useful as well - self employed are favored to make >50k
+wc <- glm(Income~workclass, clean, family='binomial')
+summary(wc)
+confint(wc)
+# never worked, without-pay arent stat sig, let's combine them now
+clean$workclass <- as.factor(case_when(
+  as.character(clean$workclass) %in% c("Never-worked", "Without-pay") ~ "Unpaid",
+  TRUE ~ as.character(clean$workclass)
+))
+# unpaid still not sig, so lets merge it with unknown
+# also looking over proportions table, we can merge the government jobs together
+clean$workclass <- as.factor(case_when(
+  as.character(clean$workclass) %in% c("Unknown", "Unpaid") ~ "Unknown/Unpaid",
+  as.character(clean$workclass) %in% c("Local-gov", "State-gov", "Federal-gov") ~ "Gov't",
+  TRUE ~ as.character(clean$workclass)
+))
+# rerun our tables
+workclassTable <- table(clean$workclass)
+propt <- t(t(prop.table(workclassTable)))
+colnames(propt) <- "workclass proportions"
+propt
+p <- prop.table(table(clean$workclass, clean$Income))
+p
+t(aggregate(workclass~Income,data=clean,summary))
+wc <- glm(Income~workclass, clean, family='binomial')
+summary(wc)
+confint(wc)
+# this looks a lot better
+
+```
+
+
+
+```{r clean occupation}
+
+as.data.frame(table(clean$occupation))
+# armed forces with 15 entries is tiny compared to all the rest, let's look at how we can make it more practical
+
+p.occ <- prop.table(table(clean$occupation, clean$Income))
+data.frame(format(p.occ, scientific = F))
+
+
+occ.glm <- glm(Income~occupation, data=clean, family='binomial')
+summary(occ.glm)
+confint(occ.glm)
+# Occupation, reviewing the breakdown of how many observations are within each factor level of occupation, Armed
+# Services represents just 15 of the 48,842 observations or 0.03% of the total, essentially giving it very little
+# predictive power, but after a logistic regression test we see the pvalue = 0.03 from zvalue, we notice the 
+# confidence interval (-0.02031461,  2.185816489) crosses zero, so merging it with a similar occupation makes 
+# sense. Also notable is that Machine-op-inspct has pvalue=0.07 with CI(-0.25527485,  0.009908866).
+# AF merge with Protective-serv
+# Mach-op-ins merge with Other-Service since they are both primarily in the private sector
+
+clean$occupation <- as.factor(case_when(
+  as.character(clean$occupation) %in% c("Armed-Forces", "Protective-serv") ~ "ArmForc/ProtSvc",
+  as.character(clean$occupation) %in% c("Machine-op-inspct", "Other-service") ~ "MachOpIns/OthSvc",
+  TRUE ~ as.character(clean$occupation)
+))
+# rerun glm 
+occ.glm <- glm(Income~occupation, data=clean, family='binomial')
+summary(occ.glm)
+confint(occ.glm)
+
+# all pvalues look stat sig, no CI cross zero!
+
+```
+
+
+
+```{r clean marital.status}
+
+ms.prop <- prop.table(table(clean$marital.status))
+data.frame(ms.prop)
+
+ms.glm <- glm(Income~marital.status, data=clean, family = "binomial")
+summary(ms.glm)
+
+# this shows that married-spouse-absent is not stat sig. when divorced is the reference, seems that 
+# class fits more with separated than divorced, although that just a legal difference to some people
+# that yileded some bad results, going to merge spouse abs with separated
+
+
+clean$marital.status <- as.factor(case_when(
+  as.character(clean$marital.status) %in% c("Married-AF-spouse", 
+                        "Married-civ-spouse") ~ "Married-spouse",
+  as.character(clean$marital.status) %in% c("Separated", "Married-spouse-absent") ~ "SpsAbs/Separtd",
+  TRUE ~ as.character(clean$marital.status)))
+
+levels(clean$marital.status)
+
+ms.glm <- glm(Income~marital.status, data=clean, family = "binomial")
+summary(ms.glm)
+# this looks better, the other way had widowed looking very bad, still on the borderline
+confint(ms.glm)
+# ok, looks good now
+
+
+```
+
+
+
+```{r data clean last summary}
+
+summary(clean)
+
+# looks good
+
+```
+
 ```{r EDA numeric variables}
 
-attach(clean)
 
 # check out the int variables
 clean %>% select_if(is.integer) %>% 
   ggpairs(ggplot2::aes(color=clean$Income))
 # not very good stories here, dont see any dependencies between the numberical values
+
 ```
 
 ```{r age}
@@ -167,102 +298,61 @@ confint(wgt)
 ```
 
 
-```{r workclass}
+```{r workclass EDA}
 
-workclassTable <- table(clean$workclass)
-t(t(workclassTable))
-propt <- t(t(prop.table(workclassTable)))
-colnames(propt) <- "workclass proportions"
-propt
-p <- prop.table(table(clean$workclass, clean$Income))
-p
-t(aggregate(workclass~Income,data=clean,summary))
+# --- workclass EDA ---#
+# summary tables
+prop.table(table(clean$workclass))
+aggregate(Income~workclass,data=clean,summary)
+prop.table(table(clean$workclass, clean$Income))
+
+
+
 ggplot(clean, aes(workclass, fill= Income)) + 
   geom_bar() +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
   labs(title = "WorkClass by Income") 
-summary(clean$workclass)
 
-# Private have the bulk of the entries ~ 70%
-# unpaid people make up less than .001% 
-sum(p[c(1,2,7)])*100 # = 13% # gov workers
-# all government workers make up a combined 13% maybe we should combine those???
-# self employed combined make up 10% 3% inc, 7% not-inc
-# this variable may be useful as well - self employed are favored to make >50k
-wc <- glm(Income~workclass, clean, family='binomial')
-summary(wc)
-confint(wc)
-# never worked, without-pay arent stat sig, let's combine them now
-clean$workclass <- as.factor(case_when(
-  as.character(clean$workclass) %in% c("Never-worked", "Without-pay") ~ "Unpaid",
-  TRUE ~ as.character(clean$workclass)
-))
-# unpaid still not sig, so lets merge it with unknown
-# also looking over proporrtions table, we can merge the government jobs together
-clean$workclass <- as.factor(case_when(
-  as.character(clean$workclass) %in% c("Unknown", "Unpaid") ~ "Unknown/Unpaid",
-  as.character(clean$workclass) %in% c("Local-gov", "State-gov", "Federal-gov") ~ "Gov't",
-  TRUE ~ as.character(clean$workclass)
-))
-# rerun our tables
-workclassTable <- table(clean$workclass)
-propt <- t(t(prop.table(workclassTable)))
-colnames(propt) <- "workclass proportions"
-propt
-p <- prop.table(table(clean$workclass, clean$Income))
-p
-t(aggregate(workclass~Income,data=clean,summary))
-wc <- glm(Income~workclass, clean, family='binomial')
-summary(wc)
-confint(wc)
-# this looks a lot better
+ggplot(clean, aes(workclass, fill= Income)) + 
+  geom_bar(position="fill") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
+  labs(title = "WorkClass by Income") 
+
+summary(clean$workclass)
 ```
 
 
-```{r occupation}
+```{r occupation EDA}
 
-# see how workclass changes affected occupation
 
 t(aggregate(occupation~workclass,data=clean,summary))
-t(prop.table(table(clean$workclass, clean$occupation)))
+(prop.table(table(clean$workclass, clean$occupation, clean$Income)))
+
 # seems similar to workclass
 ggplot(clean, aes(x=workclass, fill= occupation)) + 
   geom_bar() +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
-  labs(title="Workclass by Occupation")
+  labs(title="Workclass Totals Divided into Occupations")
+
 # just plot occupation totals
 ggplot(clean, aes(x=occupation, fill = workclass)) + 
   geom_bar() +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
-  labs(title="Occupation Totals")
+  labs(title="Occupation Totals Broken Out by Workclass")
+
+# pay proportions by occupation
 ggplot(clean, aes(x=occupation, fill = Income)) + 
-  geom_bar() +
+  geom_bar(position = "fill") +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
-  labs(title="Occupation Totals")
-occ.glm <- glm(Income~occupation, data=clean, family='binomial')
-summary(occ.glm)
-confint(occ.glm)
-# looks like we can combine armed forces with another occupation since there are only 9 of them
-# based on my tables protective.service seems like a good fit
-
-clean$occupation <- as.factor(case_when(
-  as.character(clean$occupation) %in% c("Armed-Forces", "Protective-serv") ~ "ArmForc/ ProtSvc",
-  TRUE ~ as.character(clean$occupation)
-))
-# rerun glm 
-occ.glm <- glm(Income~occupation, data=clean, family='binomial')
-summary(occ.glm)
-confint(occ.glm)
-# now when we re-run the glm statement, Farming-fishing and Other-service are insig
-#                   Estimate Std. Error z value Pr(>|z|) 
-# Farming-fishing   -0.17196    0.11006  -1.563  0.11817 - merge with
-# Machine-op-inspct -0.08516    0.08276  -1.029  0.30349 - merge with Other-service
+  labs(title="Pay Proportions by Occupation")
 
 # Exec-managerial, Prof-sepcialty look good for making >50
+
 ```
 
 
@@ -270,17 +360,29 @@ confint(occ.glm)
 #--- education ---#
 t(aggregate(education~Income,data=clean,summary))
 ggplot(clean, aes(education, fill= Income)) + geom_bar(position="fill") +
+  theme_classic() + 
   theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
-  labs(title="Education by Income") + theme_classic()
+  labs(title="Education by Income")
 # this one favors more educated people to make >50k
 
 #--- education.num---#
 t(aggregate(education.num~Income,data=clean,summary))
 # this may work better with education.num as a factor, but more education = more $$$
+
 ggplot(clean, aes(education.num, fill= Income)) + geom_bar(position="fill") +
   theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
   labs(title="Education Years by Income") + theme_classic()
 # somewhat redundant with education, just in a continuous format
+
+ggplot(clean, aes(education.num, fill= education)) + geom_bar(position="fill") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
+  labs(title="Education Years broken out by Education Level")
+# somewhat redundant with education, just in a continuous format
+# we can let the software decide which one works best in modeling
+
+prop.table(table(clean$education.num, clean$education))
+
 
 ```
 
@@ -296,19 +398,6 @@ ggplot(clean, aes(x=marital.status, fill= Income)) +
 # Married-AF-spouse (armed forces) and Married-civ-spouse (civilian) have highest potential to make >50k 
 #--- combining married-AF with married-civ since there are only 23 married-AF
 
-
-clean$marital.status <- as.factor(case_when(
-  as.character(clean$marital.status) %in% c("Married-AF-spouse", 
-                        "Married-civ-spouse") ~ "Married-spouse",
-  TRUE ~ as.character(clean$marital.status)))
-levels(clean$marital.status)
-
-
-test$marital.status <- as.factor(case_when(
-  as.character(test$marital.status) %in% c("Married-AF-spouse", 
-                        "Married-civ-spouse") ~ "Married-spouse",
-  TRUE ~ as.character(test$marital.status)))
-levels(test$marital.status)
 
 # married people have the better chances of earning >50k
 
@@ -336,15 +425,28 @@ ggplot(clean, aes(relationship, fill= Income)) + geom_bar(position="fill") +
 
 ```{r race, native country}
 t(aggregate(race~Income,data=clean,summary))
-ggplot(clean, aes(race, fill= Income)) + geom_bar(position="fill") +
+
+# reorder by proportion of race to >50K
+clean %>% mutate(race = forcats::fct_reorder(.f = race,
+                                                 .x = Income,
+                                                 .fun = function(.x) mean (.x == ">50K"),
+                                                 .desc = TRUE)) %>% 
+ggplot(aes(race, fill= Income)) + geom_bar(position="fill") +
   theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
   labs(title="Race by Income") + theme_classic()
 # none of these seems to point to making over 50
 
 t(aggregate(native.country~Income,data=clean,summary))
-ggplot(clean, aes(native.country, fill= Income)) + geom_bar(position="fill") +
-   theme_classic() + theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
-  labs(title="Native Country by Income")
+
+clean %>% mutate(native.country = forcats::fct_reorder(.f = native.country,
+                                                 .x = Income,
+                                                 .fun = function(.x) mean (.x == ">50K"),
+                                                 .desc = TRUE)) %>% 
+  ggplot(aes(x= native.country, fill= Income)) + 
+  geom_bar(position="fill") +
+  theme_classic() + 
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
+  labs(title="Native Country by Income Proportion")
 # quite a few of these pop, may be very useful
 
 ```
@@ -352,15 +454,18 @@ ggplot(clean, aes(native.country, fill= Income)) + geom_bar(position="fill") +
  
 ```{r capgain/ caploss}
 t(aggregate(capgain~Income,data=clean,summary))
+prop.table(table(clean$capgain,clean$Income))
+
 ggplot(clean, aes(capgain, fill= Income)) + geom_bar(position="fill") +
-  labs(title="Has Capital Grains by Income") + theme_classic()
+  labs(title="Has Capital Gains by Income") + theme_classic()
   #theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0))
 # people with capital gains tend to make more than 50
 
 t(aggregate(caploss~Income,data=clean,summary))
+prop.table(table(clean$caploss,clean$Income))
 ggplot(clean, aes(caploss, fill= Income)) + geom_bar(position="fill") +
   theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
-  labs(title="Has Campital Loss by Income") + theme_classic()
+  labs(title="Has Capital Loss by Income") + theme_classic()
 # people with capital.loss also have tend to make >50
 
 ```
@@ -368,11 +473,18 @@ ggplot(clean, aes(caploss, fill= Income)) + geom_bar(position="fill") +
 
 ```{r hours/week}
 t(aggregate(hours.per.week~Income,data=clean,summary))
-ggplot(clean, aes(hours.per.week, fill= Income)) + geom_bar(position="fill") +
+prop.table(table(clean$hours.per.week, clean$Income))
+
+clean %>%
+ggplot(aes(hours.per.week, fill= Income)) + 
+  geom_bar(position="fill") +
+  theme_classic() +
   theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
   scale_x_continuous(breaks=seq(0,100, by = 10)) +
   labs(title="Hours Per Week by Income",
-       x = "Hours Worked Per Week") + theme_classic()
+       x = "Hours Worked Per Week",
+       y = "Proportions") 
+
 # this maybe a decent predictor since we can see some separation between hours and over/under 50k
 
 ggplot(clean, aes(x=occupation,y=hours.per.week, fill= Income)) + geom_bar(stat="identity") +
@@ -382,7 +494,17 @@ ggplot(clean, aes(x=occupation,y=hours.per.week, fill= Income)) + geom_bar(stat=
        x = "Occupation",
        y = "Hours/Week") 
 
-detach(clean)
+
+```
+
+```{r test for multicollinearity}
+
+fac.clean <- clean %>% select_if(~class(.) == "factor")
+fac.clean.glm <- glm(Income~., data=fac.clean, family="binomial")
+summary(fac.clean.glm)
+vif(fac.clean.glm)
+# workclass, marital.status, occupation, relationship look like they can go
+
 ```
 
 
@@ -397,85 +519,71 @@ test <- clean[-train.ind,]
 
 ```
 
+# Due to the large unbalanced nature of the dataset, I recommend down sampling the training dataset
+# stopping here for now!!!
+##########################################################################
+
 
 ```{r balance training dataset}
 # instruction from: https://www.analyticsvidhya.com/blog/2016/03/practical-guide-deal-imbalanced-classification-problems/
 # using ROSE library
-
 # recheck table
 table(train$Income)
-
 # Income distribution
 prop.table(table(train$Income))
-prop.table(table(test$Income))
-
+library(ROSE)
 library(rpart)
-# use decision tree to check for prediction accuracy on raw data
-glmimb <- glm(Income~., data=train, family='binomial')
-pred.glmimb <- predict(glmimb, newdata = test)
 
-accuracy.meas(test$Income, pred.glmimb[,2])
+# use decision tree to check for prediction accuracy on raw data
+treeimb <- rpart(Income~., data=train)
+pred.treeimb <- predict(treeimb, newdata = test)
+accuracy.meas(test$Income, pred.treeimb[,2])
+
 # threshold = 0.5
 # not very good numbers 
 # precision = 0.679 {precision of prediction}
 # recall = 0.546 {recall of the prediction}
 # F = 0.303 {average between precision and recall}
-
 roc.curve(test$Income, pred.treeimb[,2], plotit = T)
 # AUC = 0.826 which isn't all the bad
-
 # over sampling
-data_balanced_over <- ovun.sample(Income~., data=clean, method = "over", N = 24720 * 2, seed = 123)$data
+data_balanced_over <- ovun.sample(Income~., data=train, method = "over", N = 24720 * 2, seed = 123)$data
 table(data_balanced_over$Income)
 # data is now balance between <=50k and >50k
-
-data_balanced_under <- ovun.sample(Income~., data=clean, method = "under", N = 7841 * 2, seed = 123)$data
+data_balanced_under <- ovun.sample(Income~., data=train, method = "under", N = 7841 * 2, seed = 123)$data
 table(data_balanced_under$Income)
-
-data_balanced_both <- ovun.sample(Income~., data=clean, method = "both", p=0.5, seed = 123)$data
+data_balanced_both <- ovun.sample(Income~., data=train, method = "both", p=0.5, seed = 123)$data
 table(data_balanced_both$Income)
-
-data.rose <- ROSE(Income~., data=clean, seed = 123)$data
+data.rose <- ROSE(Income~., data=train, seed = 123)$data
 table(data.rose$Income)
-
 # build decision trees to evaluate accuracy
 tree.rose <- rpart(Income~., data = data.rose)
 tree.over <- rpart(Income~., data = data_balanced_over)
 tree.under <- rpart(Income~., data = data_balanced_under)
 tree.both <- rpart(Income~., data = data_balanced_both)
-
 # make predictions
 pred.tree.rose <- predict(tree.rose, newdata = test)
 pred.tree.over <- predict(tree.over, newdata = test)
 pred.tree.under <- predict(tree.under, newdata = test)
 pred.tree.both <- predict(tree.both, newdata = test)
-
 #AUC Rose
 roc.curve(test$Income, pred.tree.rose[,2], add.roc = F, col = "red")
-
 #AUC Over
 roc.curve(test$Income, pred.tree.over[,2], add.roc = T, col = "blue")
-
 #AUC Under
 roc.curve(test$Income, pred.tree.under[,2], add.roc = T, col = "green")
-
 #AUC Both
 roc.curve(test$Income, pred.tree.both[,2], add.roc = T, col = "black")
-
 pta <- accuracy.meas(test$Income, pred.tree.rose[,2])
 pto <- accuracy.meas(test$Income, pred.tree.over[,2])
 ptu <- accuracy.meas(test$Income, pred.tree.under[,2])
 ptb <- accuracy.meas(test$Income, pred.tree.both[,2])
-
 tree <- c("Rose", "Over", "Under", "Both")
 precision <- as.numeric(unlist(c(pta[3], pto[3], ptu[3], ptb[3])))
 recall <- as.numeric(unlist(c(pta[4], pto[4], ptu[4], ptb[4])))
 F <- as.numeric(unlist(F <- c(pta[5], pto[5], ptu[5], ptb[5])))
-
 # put all the accuract measures into 1 dataframe
 accuracyDF <- data.frame(tree, precision, recall, F)
 accuracyDF
 # over or under perform the same, I prefer the larger dataset = over
-
-
 ```
