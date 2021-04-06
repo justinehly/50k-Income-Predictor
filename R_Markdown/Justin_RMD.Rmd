@@ -1,6 +1,6 @@
 ---
 title: "Project2"
-author: "Allen Miller"
+author: "Justin Ehly, Allen Miller, Alex Gilbert "
 date: "3/24/2021"
 output: html_document
 ---
@@ -19,6 +19,7 @@ library(directlabels)
 library(caret)
 library(glmnet)
 library(MASS)
+library(ROCR)
 library(dplyr)
 
 ```
@@ -304,7 +305,7 @@ vif(fac.clean.glm)
 ```
 
 
-```{r age}
+```{r age EDA}
 #--- age ---#
 t(aggregate(age~Income,data=clean,summary))
 # Min Age <=50: 17/ >50: 19 
@@ -328,7 +329,7 @@ ggplot(clean, aes(age, fill= Income)) + geom_boxplot() +
 ``` 
 
 
-```{r finlwgt}
+```{r finlwgt EDA}
 
 ggplot(clean, aes(fnlwgt, fill= Income)) + geom_boxplot() +
   theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0)) +
@@ -402,7 +403,7 @@ ggplot(clean, aes(x=occupation, fill = Income)) +
 ```
 
 
-```{r education and education.num}
+```{r education and education.num EDA}
 #--- education ---#
 t(aggregate(education~Income,data=clean,summary))
 ggplot(clean, aes(education, fill= Income)) + geom_bar(position="fill") +
@@ -437,7 +438,7 @@ prop.table(table(clean$education.num, clean$education))
 ```
 
 
-```{r marital.status and relationship}
+```{r marital.status and relationship EDA}
 t(aggregate(marital.status~Income,data=clean,summary))
 # married people have the better chances of earning >50k
 ggplot(clean, aes(x=marital.status, fill= Income)) + 
@@ -477,7 +478,7 @@ prop.table(tb)
 ```
 
 
-```{r race, native country}
+```{r race, native country EDA}
 t(aggregate(race~Income,data=clean,summary))
 
 # reorder by proportion of race to >50K
@@ -506,7 +507,7 @@ clean %>% mutate(native.country = forcats::fct_reorder(.f = native.country,
 ```
  
  
-```{r capgain/ caploss}
+```{r capgain/ caploss EDA}
 t(aggregate(capgain~Income,data=clean,summary))
 prop.table(table(clean$capgain,clean$Income))
 
@@ -525,7 +526,7 @@ ggplot(clean, aes(caploss, fill= Income)) + geom_bar(position="fill") +
 ```
 
 
-```{r hours/week}
+```{r hours/week EDA}
 t(aggregate(hours.per.week~Income,data=clean,summary))
 prop.table(table(clean$hours.per.week, clean$Income))
 
@@ -551,82 +552,35 @@ ggplot(clean, aes(x=occupation,y=hours.per.week, fill= Income)) + geom_bar(stat=
 
 ```
 
-
+# ----- Split train/ test ----- #
 
 ```{r split clean df into train/ test 2/3 vs 1/3}
 
+holder <- clean
+
 set.seed(123)
+
+# establish the orde of the Income factor levels
 smp.size <- floor( (nrow(clean)/3) * 2)
 train.ind <- sample(seq_len(nrow(clean)), size=smp.size)
 train <- clean[train.ind,]
 test <- clean[-train.ind,]
 
 prop.table(table(train$Income))
+# ~76% <=50K
+# ~ 24% >50K
+
 
 ```
 
 
-##########################################################################
-
-
-```{r balance training dataset}
-# instruction from: https://www.analyticsvidhya.com/blog/2016/03/practical-guide-deal-imbalanced-classification-problems/
-# using ROSE library
-# recheck table
-table(train$Income)
-# Income distribution
-prop.table(table(train$Income))
-library(ROSE)
-library(rpart)
-
-# use decision tree to check for prediction accuracy on raw data
-treeimb <- rpart(Income~., data=train)
-pred.treeimb <- predict(treeimb, newdata = test)
-unbal <- accuracy.meas(test$Income, pred.treeimb[,2])
-unbal 
-
-# threshold = 0.5
-# not very good numbers 
-# precision = 0.719 {precision of prediction}
-# recall = 0.460 {recall of the prediction}
-# F = 0.280 {average between precision and recall}
-roc.curve(test$Income, pred.treeimb[,2], plotit = T)
-# AUC = 0.826 which isn't all the bad
-
-# down balance
-data_balanced_under <- ovun.sample(Income~., data=train, method = "under", N = 7841 * 2, seed = 123)$data
-table(data_balanced_under$Income)
-
-# build decision tree to evaluate accuracy
-tree.under <- rpart(Income~., data = data_balanced_under)
-
-# make prediction
-pred.tree.under <- predict(tree.under, newdata = test)
-
-
-#AUC Under
-roc.curve(test$Income, pred.tree.under[,2], add.roc = T, col = "green")
-
-ptu <- accuracy.meas(test$Income, pred.tree.under[,2])
-
-
-precision <- as.numeric(unlist(c(unbal[3], ptu[3])))
-recall <- as.numeric(unlist(c(unbal[4], ptu[4])))
-F <- as.numeric(unlist(F <- c(unbal[5], ptu[5])))
-
-tree <- c("Unbalanced",  "Under Sampled")
-# put all the accuract measures into 1 dataframe
-accuracyDF <- data.frame(tree, precision, recall, F)
-accuracyDF
-# We end up with reversed precision and recall, let's avoid this for now.
-
-```
+# # ----- Models ----- #
 
 ```{r LASSO - Regression}
 
 
-dat.train.x <- model.matrix(Income~.,train)
-dat.train.y<-train[,1]
+dat.train.x <- model.matrix(Income~.,train)[,-1]
+dat.train.y<-train$Income
 cvfit <- cv.glmnet(dat.train.x, dat.train.y, family = "binomial", type.measure = "class", nlambda = 1000)
 plot(cvfit)
 coef(cvfit, s = "lambda.min")
@@ -641,26 +595,26 @@ cvfit$lambda.min
 #For final model predictions go ahead and refit lasso using entire
 #data set
 finalmodel<-glmnet(dat.train.x, dat.train.y, family = "binomial",lambda=cvfit$lambda.min)
-# LASSO chose
-# age, workclass, fnlwgt, education, marital.status, occupation, relationship, race, 
+# LASSO chose : age, workclass, fnlwgt, education, marital.status, occupation, relationship, race, 
 # hours.per.week, native.country, capgain, caploss
 ```
 
-# #################  MODELS  ################
-
 
 ```{r LR model from LASSO}
-mod.lasso <- model.matrix(Income~age + workclass + fnlwgt + education +
+mod.lasso <- glm(Income~age + workclass + fnlwgt + education +
               marital.status + occupation + relationship +
               race + hours.per.week + native.country + capgain + caploss,
             data=train, family = "binomial")
+pred.lasso <- predict(mod.lasso, newdata = test, type = "response")
+
 summary(mod.lasso)
 # confint(mod.lasso)
 vif(mod.lasso)
 
 exp(cbind("Odds ratio" = coef(mod.lasso), confint.default(mod.lasso, level = 0.95)))
 
-
+par(mfrow = c(2:2))
+plot(mod.lasso)
 ```
 
 ```{r stepwise}
@@ -668,8 +622,64 @@ exp(cbind("Odds ratio" = coef(mod.lasso), confint.default(mod.lasso, level = 0.9
 
 mod.full <- glm(Income~., data=train, family = "binomial")
 mod.step <- mod.full %>% stepAIC(trace=FALSE)
+pred.step <- predict(mod.step, newdata = test, type = "response")
+
+
 summary(mod.step)
 # confint(mod.step)
 vif(mod.step)
 
 exp(cbind("Odds ratio" = coef(mod.step), confint.default(mod.step, level = 0.95)))
+```
+
+
+```{r confusion matrix}
+
+#Lets use the predicted probablities to classify the observations and make a final confusion matrix for the two models.  We can use it to calculate error metrics.
+#Lets use a cutoff of 0.5 to make the classification.
+# factor level order (0,1) = (<=50K, >50K)
+cutoff<-0.5
+class.lasso<-factor(ifelse(pred.lasso>cutoff,">50K","<=50K"),levels=c("<=50K",">50K"))
+class.step<-factor(ifelse(pred.step>cutoff,">50K","<=50K"),levels=c("<=50K",">50K"))
+
+#Confusion Matrix for Lasso
+conf.lasso <- table(class.lasso, test$Income)
+print("Confusion matrix for LASSO")
+conf.lasso
+
+conf.step<-table(class.step,test$Income)
+print("Confusion matrix for Stepwise")
+conf.step
+
+```
+
+```{r accuracy tests}
+
+#Accuracy of LASSO and Stepwise
+acc.lasso <- sum(diag(conf.lasso))/sum(conf.lasso)
+acc.step <- sum(diag(conf.step))/sum(conf.step)
+
+print("Overall accuracy for LASSO and Stepwise respectively")
+acc.lasso
+acc.step
+
+```
+
+
+```{r roc curves}
+
+results.lasso <- prediction(pred.lasso, test$Income, label.ordering=c("<=50K",">50K"))
+roc.lasso = performance(results.lasso, measure = "tpr", x.measure = "fpr")
+
+
+results.step <- prediction(pred.step, test$Income, label.ordering=c("<=50K",">50K"))
+roc.step = performance(results.step, measure = "tpr", x.measure = "fpr")
+
+
+plot(roc.lasso, col = "red")
+plot(roc.step,col="green", add = TRUE)
+legend("bottomright",legend=c("Lasso","Stepwise"),
+       col=c("black","green"),lty=1,lwd=1)
+abline(a=0, b= 1)
+
+```
