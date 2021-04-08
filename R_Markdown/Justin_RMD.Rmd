@@ -83,7 +83,7 @@ summary(clean)
 # 24,720 <=50k vs 7,841 >50k
 
 #output sumamry to csv for easier use in the paper
-write.csv(summary(clean),"data_summary.csv")
+#write.csv(summary(clean),"data_summary.csv")
 
 
 # lots of zeros in the capital gains and losses columns, may be better to treat those as yes/no
