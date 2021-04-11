@@ -28,6 +28,10 @@ library(Lahman)
 
 ```{r data import}
 #setwd("C:/Users/justi/Documents/GitHub/6372---50k-Income-Predictor/Data")
+#adult_info <- read.csv("adult.data.csv", header = TRUE)
+#adult_test <- read.csv("adult.test.csv", header = TRUE)
+
+#Code Path for Allen's MAC
 adult_info <- read.csv("/Users/allenmiller/Documents/GitHub/6372---50k-Income-Predictor/Data/adult.data.csv", header = TRUE)
 # View(adult_info)
 adult_test <- read.csv("/Users/allenmiller/Documents/GitHub/6372---50k-Income-Predictor/Data/adult.test.csv")
