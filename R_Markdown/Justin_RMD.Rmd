@@ -22,15 +22,15 @@ library(MASS)
 library(caret)
 library(ROCR)
 library(dplyr)
-
+library(Lahman)
 ```
 
 
 ```{r data import}
-setwd("C:/Users/justi/Documents/GitHub/6372---50k-Income-Predictor/Data")
-adult_info <- read.csv("adult.data.csv", header = TRUE)
+#setwd("C:/Users/justi/Documents/GitHub/6372---50k-Income-Predictor/Data")
+adult_info <- read.csv("/Users/allenmiller/Documents/GitHub/6372---50k-Income-Predictor/Data/adult.data.csv", header = TRUE)
 # View(adult_info)
-adult_test <- read.csv("adult.test.csv")
+adult_test <- read.csv("/Users/allenmiller/Documents/GitHub/6372---50k-Income-Predictor/Data/adult.test.csv")
 # set the clean set to the larger data set
 
 # merge the data + test data to form one dataset for cleaning
@@ -182,7 +182,7 @@ as.data.frame(table(clean$occupation))
 # armed forces with 15 entries is tiny compared to all the rest, let's look at how we can make it more practical
 
 p.occ <- prop.table(table(clean$occupation, clean$Income))
-data.frame(format(p.occ, scientific = F))
+data.frame(format(p.occ, scientific = FALSE))
 
 
 occ.glm <- glm(Income~occupation, data=clean, family='binomial')
@@ -273,7 +273,7 @@ cor2pcor(cov(clean.int)) # corpcor correlation matrix
 ```{r PCA}
 
 clean.pca <- clean %>% select_if(~class(.) == "integer")
-pc.result<-prcomp(clean.pca,scale.=FALSE)
+pc.result<-prcomp(clean.pca,scale.=TRUE)
 pc.scores<-data.frame(pc.result$x)
 pairs(pc.scores[,1:4])
 cor(pc.scores)
@@ -286,7 +286,15 @@ cumulative.prop<-cumsum(eigenvals/sum(eigenvals))
 plot(1:4,cumulative.prop,type="l",main="Cumulative proportion",ylim=c(0,1))
 par(mfrow=c(1,1))
 
-# Scree plot shows we really only need 2 continuous variables.
+#Screen Plot suggests we use 2 PCs - However this doesn't even explain 60% of the variability in the data
+#Judging by the variance plot we should use ether 3 (75%) or 4 (99%) PCs
+
+#Add PCs to Clean Data Frame
+clean$PC1 <- pc.scores$PC1
+clean$PC2 <- pc.scores$PC2
+clean$PC3 <- pc.scores$PC3
+clean$PC4 <- pc.scores$PC4
+str(clean)
 
 ```
 
@@ -642,7 +650,7 @@ plot(mod.step)
 ```{r confusion matrix}
 
 #Lets use the predicted probabilities to classify the observations and make a final confusion matrix for the two models.  We can use it to calculate error metrics.
-#Lets use a cutoff of 0.5 to make the classification.
+#Lets use a cutoff of 0.7 to make the classification.
 # factor level order (0,1) = (<=50K, >50K)
 cutoff.lasso <- 0.7
 cutoff.step <- 0.7
@@ -724,3 +732,235 @@ rownames(testResults) <- c("LASSO", "Stepwise")
 testResults
 
 ```
+```{r Look for Interaction}
+#testing p-values for interaction between variables we thought may interact in EDA
+chisq.test(train$race, train$age)
+chisq.test(train$occupation, train$age)
+chisq.test(train$education.num, train$occupation)
+chisq.test(train$age, train$marital.status)
+chisq.test(train$age, train$education)
+chisq.test(train$marital.status, train$education)
+
+
+#Plots to see interaction
+train %>% ggplot(aes(x = age, y = education, color = Income)) + geom_boxplot()
+train %>% ggplot(aes(x = age, y = marital.status, color = Income)) + geom_boxplot()
+train %>% ggplot(aes(x = age, y = relationship, color = Income)) + geom_boxplot()
+train %>% ggplot(aes(x = relationship, y = marital.status, color = Income)) + geom_jitter()
+train %>% ggplot(aes(x = marital.status, y = education, color = Income)) + geom_jitter()
+
+```
+
+```{r More Complex Logistic Model}
+# LASSO chose : age, workclass, fnlwgt, education, marital.status, occupation, relationship, race, 
+# hours.per.week, native.country, capgain, caploss
+#added age*marital.status, age*education, marital.status*education
+
+mod.lasso.complex <- glm(Income~age + workclass + fnlwgt + education +
+              marital.status + occupation + relationship +
+              race + hours.per.week + native.country + capgain + caploss  + I(age^2) + I(age^3) + I(age^4) + I(age^5) + I(age^6),
+            data=train, family = "binomial")
+pred.lasso.complex <- predict(mod.lasso.complex, newdata = test, type = "response")
+
+summary(mod.lasso.complex)
+# confint(mod.lasso)
+#car::vif(mod.lasso.complex)
+
+exp(cbind("Odds ratio" = coef(mod.lasso.complex), confint.default(mod.lasso.complex, level = 0.95)))
+
+par(mfrow=c(2,2))
+plot(mod.lasso.complex)
+
+
+
+```
+
+```{r Confusion Matrix for Complex}
+#Lets use the predicted probabilities to classify the observations and make a final confusion matrix for the two models.  We can use it to calculate error metrics.
+#Lets use a cutoff of 0.5 to make the classification.
+# factor level order (0,1) = (<=50K, >50K)
+cutoff.lasso.complex <- 0.5
+class.lasso.complex <- factor(ifelse(pred.lasso.complex>cutoff.lasso.complex,">50K","<=50K"),levels=c("<=50K",">50K"))
+
+#Confusion Matrix for Lasso
+conf.lasso.complex <- table(class.lasso.complex, test$Income)
+print("Confusion matrix for LASSO.Complex")
+conf.lasso.complex
+```
+
+```{r accuracy tests}
+
+#Accuracy of complex
+acc.lasso.complex <- sum(diag(conf.lasso.complex))/sum(conf.lasso.complex)
+
+print("Overall accuracy for LASSO and Stepwise respectively")
+acc.lasso.complex
+
+# sensitivity A/(A+C)
+sens.lasso.complex <- sensitivity(conf.lasso.complex)
+
+# specificity D/(B+D)
+spec.lasso.complex <- specificity(conf.lasso.complex)
+
+```
+
+```{r roc curves}
+
+results.lasso.complex <- prediction(pred.lasso.complex, test$Income, label.ordering=c("<=50K",">50K"))
+roc.lasso.complex <- performance(results.lasso.complex, measure = "tpr", x.measure = "fpr")
+
+
+par(mfrow=c(1,1))
+
+plot(roc.lasso.complex, col = "red")
+
+# generate AUC values
+auc.lasso.complex <- performance(results.lasso.complex, measure = "auc")
+auc.lasso.complex@y.values[[1]]
+
+
+  
+```
+
+```{r Table For Complex LASSO Results}
+
+# Table for Accuracy, Sensitivity, Specificity
+cutoff <- c(cutoff.lasso.complex)
+sens <- c(sens.lasso.complex)
+spec <- c(spec.lasso.complex)
+acc <- c(acc.lasso.complex)
+auc <- c(auc.lasso.complex@y.values[[1]])
+
+testResults.complex <- data.frame(cutoff, sens, spec, acc, auc)
+names(testResults.complex) <- c("Cutoff", "Sensitivity", "Specificity", "Accuracy", "AUC")
+rownames(testResults.complex) <- c("LASSO.Complex")
+testResults.complex
+
+```
+
+
+```{r Constructing LDA Model Non-PCA}
+# construct the LDA model
+#age, fnlwgt, education.num, hours.per.week
+mylda <- lda(Income ~ age + fnlwgt + education.num + hours.per.week, data = train)
+
+pred<-predict(mylda,newdata=test)$class  #Predictions can come in many forms, the class form provides the categorical level of your response.
+Truth<-test$Income
+x<-table(pred,Truth) # Creating a confusion matrix
+x
+#Missclassification Error
+ME<-(x[2,1]+x[1,2])/length(test$Income)
+
+# accuracy for LDA
+acc.lda <- 1-ME
+
+print("Overall accuracy for LDA")
+acc.lda
+
+# sensitivity A/(A+C)
+sens.lda <- sensitivity(x)
+
+print("Sensitivity for LDA")
+sens.lda
+
+# specificity D/(B+D)
+spec.lda <- specificity(x)
+
+print("Specificity for LDA")
+spec.lda
+
+
+#Looks like the Non-PCA LDA model performs worse than our complex LASSO model
+#Both Models perform worse than our original LASSO and Stepwise Models
+```
+
+
+```{r Constructing LDA Model PCA}
+# construct the LDA Using PCA model
+
+#Chose to use 4 PCs since 3 didn't even explain 80% of the variability in the model.
+#If we chose 2 PCs like the screen plot suggested we would only be explaining about 60% of the variability
+myldaPCA <- lda(Income ~ PC1 + PC2 + PC3 + PC4, data = train)
+
+pred<-predict(myldaPCA,newdata=test)$class  #Predictions can come in many forms, the class form provides the categorical level of your response.
+Truth<-test$Income
+x<-table(pred,Truth) # Creating a confusion matrix
+x
+#Missclassification Error
+ME<-(x[2,1]+x[1,2])/length(test$Income)
+
+# accuracy of LDA.PCA
+acc.lda.pca <- 1-ME
+
+print("Overall accuracy for LDA.PCA")
+acc.lda.pca
+
+# sensitivity A/(A+C)
+sens.lda.pca <- sensitivity(x)
+
+print("Sensitivity for LDA.PCA")
+sens.lda.pca
+
+# specificity D/(B+D)
+spec.lda.pca <- specificity(x)
+
+print("Specificity for LDA.PCA")
+spec.lda.pca
+
+
+
+#Looks like using PCA on LDA to predict Income doesn't perform as well as just LDA or the Complex LASSO model
+#All models for Part 2 have performed worse than our original model from Part 1
+
+```
+
+```{r Constructing QDA PCA Model}
+# construct the PCA QDA model
+
+#Chose to use 4 PCs since 3 didn't even explain 80% of the variability in the model.
+#If we chose 2 PCs like the screen plot suggested we would only be explaining about 60% of the variability
+myQda <- qda(Income ~ PC1 + PC2 + PC3, data = train)
+
+pred<-predict(myQda,newdata=test)$class  #Predictions can come in many forms, the class form provides the categorical level of your response.
+Truth<-test$Income
+x<-table(pred,Truth) # Creating a confusion matrix
+x
+#Missclassification Error
+ME<-(x[2,1]+x[1,2])/length(test$Income)
+
+# accuracy of QDA.PCA
+acc.qda.pca <- 1-ME
+
+print("Overall accuracy for QDA.PCA")
+acc.qda.pca
+
+# sensitivity A/(A+C)
+sens.qda.pca <- sensitivity(x)
+
+print("Sensitivity for QDA.PCA")
+sens.qda.pca
+
+# specificity D/(B+D)
+spec.qda.pca <- specificity(x)
+
+print("Specificity for QDA.PCA")
+spec.qda.pca
+#Once again, using PCA on a QDA model performed worse than all previous models (though only barely in the case of PCA LDA)
+#All models for Part 2 have performed worse than our original model from Part 1
+
+```
+
+```{r Table For LDA / QDA Results}
+
+# Table for Accuracy, Sensitivity, Specificity
+sens.lda.qda <- c(sens.lda, sens.lda.pca, sens.qda.pca)
+spec.lda.qda <- c(spec.lda, spec.lda.pca, spec.qda.pca)
+acc.lda.qda <- c(acc.lda, acc.lda.pca, acc.qda.pca)
+
+testResults.lda <- data.frame(sens.lda.qda, spec.lda.qda, acc.lda.qda)
+names(testResults.lda) <- c("Sensitivity", "Specificity", "Accuracy")
+rownames(testResults.lda) <- c("LDA", "LDA.PCA", "QDA.PCA")
+testResults.lda
+
+```
+
