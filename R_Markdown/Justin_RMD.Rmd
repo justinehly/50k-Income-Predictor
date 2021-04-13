@@ -846,6 +846,8 @@ testResults.complex
 ```{r Constructing LDA Model Non-PCA}
 # construct the LDA model
 #age, fnlwgt, education.num, hours.per.week
+cutoff.lda <- NA
+
 mylda <- lda(Income ~ age + fnlwgt + education.num + hours.per.week, data = train)
 
 pred<-predict(mylda,newdata=test)$class  #Predictions can come in many forms, the class form provides the categorical level of your response.
@@ -853,10 +855,10 @@ Truth<-test$Income
 x<-table(pred,Truth) # Creating a confusion matrix
 x
 #Missclassification Error
-ME<-(x[2,1]+x[1,2])/length(test$Income)
+ME<-sum(diag(x))/sum(x)
 
 # accuracy for LDA
-acc.lda <- 1-ME
+acc.lda <- ME
 
 print("Overall accuracy for LDA")
 acc.lda
@@ -884,6 +886,8 @@ spec.lda
 
 #Chose to use 4 PCs since 3 didn't even explain 80% of the variability in the model.
 #If we chose 2 PCs like the screen plot suggested we would only be explaining about 60% of the variability
+cutoff.lda.pca <- NA
+
 myldaPCA <- lda(Income ~ PC1 + PC2 + PC3 + PC4, data = train)
 
 pred<-predict(myldaPCA,newdata=test)$class  #Predictions can come in many forms, the class form provides the categorical level of your response.
@@ -891,10 +895,10 @@ Truth<-test$Income
 x<-table(pred,Truth) # Creating a confusion matrix
 x
 #Missclassification Error
-ME<-(x[2,1]+x[1,2])/length(test$Income)
+ME<-sum(diag(x))/sum(x)
 
 # accuracy of LDA.PCA
-acc.lda.pca <- 1-ME
+acc.lda.pca <- ME
 
 print("Overall accuracy for LDA.PCA")
 acc.lda.pca
@@ -923,6 +927,8 @@ spec.lda.pca
 
 #Chose to use 4 PCs since 3 didn't even explain 80% of the variability in the model.
 #If we chose 2 PCs like the screen plot suggested we would only be explaining about 60% of the variability
+cutoff.qda.pca <- NA
+
 myQda <- qda(Income ~ PC1 + PC2 + PC3, data = train)
 
 pred<-predict(myQda,newdata=test)$class  #Predictions can come in many forms, the class form provides the categorical level of your response.
@@ -930,10 +936,10 @@ Truth<-test$Income
 x<-table(pred,Truth) # Creating a confusion matrix
 x
 #Missclassification Error
-ME<-(x[2,1]+x[1,2])/length(test$Income)
+ME<-sum(diag(x))/sum(x)
 
 # accuracy of QDA.PCA
-acc.qda.pca <- 1-ME
+acc.qda.pca <- ME
 
 print("Overall accuracy for QDA.PCA")
 acc.qda.pca
@@ -957,13 +963,15 @@ spec.qda.pca
 ```{r Table For LDA / QDA Results}
 
 # Table for Accuracy, Sensitivity, Specificity
-sens.lda.qda <- c(sens.lda, sens.lda.pca, sens.qda.pca)
-spec.lda.qda <- c(spec.lda, spec.lda.pca, spec.qda.pca)
-acc.lda.qda <- c(acc.lda, acc.lda.pca, acc.qda.pca)
+cutoff.lda.qda <- c(cutoff.lasso.complex, cutoff.lda, cutoff.lda.pca, cutoff.qda.pca)
+sens.lda.qda <- c(sens.lasso.complex, sens.lda, sens.lda.pca, sens.qda.pca)
+spec.lda.qda <- c(spec.lasso.complex, spec.lda, spec.lda.pca, spec.qda.pca)
+acc.lda.qda <- c(acc.lasso.complex, acc.lda, acc.lda.pca, acc.qda.pca)
+auc.lda.qda <- c(auc.lasso.complex@y.values[[1]], NA, NA, NA)
 
-testResults.lda <- data.frame(sens.lda.qda, spec.lda.qda, acc.lda.qda)
-names(testResults.lda) <- c("Sensitivity", "Specificity", "Accuracy")
-rownames(testResults.lda) <- c("LDA", "LDA.PCA", "QDA.PCA")
+testResults.lda <- data.frame(cutoff.lda.qda, sens.lda.qda, spec.lda.qda, acc.lda.qda, auc.lda.qda)
+names(testResults.lda) <- c("Cutoff", "Sensitivity", "Specificity", "Accuracy", "AUC")
+rownames(testResults.lda) <- c("Complex LASSO","LDA", "LDA.PCA", "QDA.PCA")
 testResults.lda
 
 ```
