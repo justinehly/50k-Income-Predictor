@@ -762,7 +762,7 @@ train %>% ggplot(aes(x = marital.status, y = education, color = Income)) + geom_
 
 mod.lasso.complex <- glm(Income~age + workclass + fnlwgt + education +
               marital.status + occupation + relationship +
-              race + hours.per.week + native.country + capgain + caploss  + I(age^2) + I(age^3) + I(age^4) + I(age^5) + I(age^6),
+              race + hours.per.week + native.country + capgain + caploss  + I(age^2) + I(age^3) + I(age^4) + I(age^5) + I(age^6) + age*native.country,
             data=train, family = "binomial")
 pred.lasso.complex <- predict(mod.lasso.complex, newdata = test, type = "response")
 
@@ -783,7 +783,7 @@ plot(mod.lasso.complex)
 #Lets use the predicted probabilities to classify the observations and make a final confusion matrix for the two models.  We can use it to calculate error metrics.
 #Lets use a cutoff of 0.5 to make the classification.
 # factor level order (0,1) = (<=50K, >50K)
-cutoff.lasso.complex <- 0.5
+cutoff.lasso.complex <- 0.25
 class.lasso.complex <- factor(ifelse(pred.lasso.complex>cutoff.lasso.complex,">50K","<=50K"),levels=c("<=50K",">50K"))
 
 #Confusion Matrix for Lasso
