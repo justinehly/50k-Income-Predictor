@@ -656,8 +656,8 @@ plot(mod.step)
 #Lets use the predicted probabilities to classify the observations and make a final confusion matrix for the two models.  We can use it to calculate error metrics.
 #Lets use a cutoff of 0.7 to make the classification.
 # factor level order (0,1) = (<=50K, >50K)
-cutoff.lasso <- 0.7
-cutoff.step <- 0.7
+cutoff.lasso <- 0.25
+cutoff.step <- 0.25
 class.lasso <- factor(ifelse(pred.lasso>cutoff.lasso,">50K","<=50K"),levels=c("<=50K",">50K"))
 class.step <- factor(ifelse(pred.step>cutoff.step,">50K","<=50K"),levels=c("<=50K",">50K"))
 
@@ -739,6 +739,7 @@ testResults
 ```{r Look for Interaction}
 #testing p-values for interaction between variables we thought may interact in EDA
 chisq.test(train$race, train$age)
+chisq.test(train$native.country, train$age)
 chisq.test(train$occupation, train$age)
 chisq.test(train$education.num, train$occupation)
 chisq.test(train$age, train$marital.status)
@@ -747,11 +748,29 @@ chisq.test(train$marital.status, train$education)
 
 
 #Plots to see interaction
-train %>% ggplot(aes(x = age, y = education, color = Income)) + geom_boxplot()
-train %>% ggplot(aes(x = age, y = marital.status, color = Income)) + geom_boxplot()
-train %>% ggplot(aes(x = age, y = relationship, color = Income)) + geom_boxplot()
-train %>% ggplot(aes(x = relationship, y = marital.status, color = Income)) + geom_jitter()
-train %>% ggplot(aes(x = marital.status, y = education, color = Income)) + geom_jitter()
+train %>% ggplot(aes(x = age, y = education, color = Income)) + geom_boxplot()+
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0))
+
+train %>% ggplot(aes(x = age, y = marital.status, color = Income)) + geom_boxplot()+
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0))
+
+train %>% ggplot(aes(x = age, y = relationship, color = Income)) + geom_boxplot()+
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0))
+
+train %>% ggplot(aes(x = relationship, y = marital.status, color = Income)) + geom_jitter()+
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0))
+
+train %>% ggplot(aes(x = marital.status, y = education, color = Income)) + geom_jitter()+
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0))
+
+train %>% ggplot(aes(x = native.country, y = age, color = Income)) +geom_boxplot()+
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 270, vjust = 0, hjust = 0))
 
 ```
 
@@ -963,15 +982,15 @@ spec.qda.pca
 ```{r Table For LDA / QDA Results}
 
 # Table for Accuracy, Sensitivity, Specificity
-cutoff.lda.qda <- c(cutoff.lasso.complex, cutoff.lda, cutoff.lda.pca, cutoff.qda.pca)
-sens.lda.qda <- c(sens.lasso.complex, sens.lda, sens.lda.pca, sens.qda.pca)
-spec.lda.qda <- c(spec.lasso.complex, spec.lda, spec.lda.pca, spec.qda.pca)
-acc.lda.qda <- c(acc.lasso.complex, acc.lda, acc.lda.pca, acc.qda.pca)
-auc.lda.qda <- c(auc.lasso.complex@y.values[[1]], NA, NA, NA)
+cutoff.lda.qda <- c(cutoff.lasso, cutoff.step, cutoff.lasso.complex, cutoff.lda, cutoff.lda.pca, cutoff.qda.pca)
+sens.lda.qda <- c(sens.lasso, sens.step, sens.lasso.complex, sens.lda, sens.lda.pca, sens.qda.pca)
+spec.lda.qda <- c(spec.lasso, spec.step, spec.lasso.complex, spec.lda, spec.lda.pca, spec.qda.pca)
+acc.lda.qda <- c(acc.lasso, acc.step, acc.lasso.complex, acc.lda, acc.lda.pca, acc.qda.pca)
+auc.lda.qda <- c(auc.lasso@y.values[[1]], auc.step@y.values[[1]], auc.lasso.complex@y.values[[1]], NA, NA, NA)
 
 testResults.lda <- data.frame(cutoff.lda.qda, sens.lda.qda, spec.lda.qda, acc.lda.qda, auc.lda.qda)
 names(testResults.lda) <- c("Cutoff", "Sensitivity", "Specificity", "Accuracy", "AUC")
-rownames(testResults.lda) <- c("Complex LASSO","LDA", "LDA.PCA", "QDA.PCA")
+rownames(testResults.lda) <- c("LASSO","Stepwise", "Complex LASSO","LDA", "LDA.PCA", "QDA.PCA")
 testResults.lda
 
 ```
